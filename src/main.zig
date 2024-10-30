@@ -1,20 +1,33 @@
 const std = @import("std");
+const lint = @import("lint.zig");
+const Source = @import("source.zig").Source;
 
 const fs = std.fs;
 const path = std.path;
+const assert = std.debug.assert;
+const print = std.debug.print;
+
 const Ast = std.zig.Ast;
+const Linter = lint.Linter;
+// const LinterContext = lint.LinterContext;
 
 pub fn main() !void {
-    const gpa = std.heap.c_allocator;
+    const gpa = std.heap.page_allocator;
 
-    var file = try fs.cwd().openFile("src/main.zig", .{});
-    defer file.close();
+    print("opening foo.zig\n", .{});
+    const file = try fs.cwd().openFile("fixtures/foo.zig", .{});
+    var source = try Source.init(gpa, file);
+    defer source.deinit();
 
-    const meta = try file.metadata();
-    const contents = try gpa.allocSentinel(u8, meta.size(), 0);
-    defer gpa.free(contents);
+    var linter = Linter.init(gpa);
+    defer linter.deinit();
 
-    var ast = try Ast.parse(gpa, contents, .zig);
-    defer ast.deinit();
+    try linter.runOnSource(&source);
+
 }
+
+test {
+    std.testing.refAllDecls(@This());
+}
+
 

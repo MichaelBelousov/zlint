@@ -1,0 +1,96 @@
+const std = @import("std");
+const linter = @import("lint.zig");
+
+const Allocator = std.mem.Allocator;
+const Ast = std.zig.Ast;
+
+const string = @import("str.zig").string;
+const LinterContext = linter.LinterContext;
+
+pub const NodeWrapper = struct {
+    node: *const Ast.Node,
+    idx: Ast.Node.Index,
+};
+
+const RunOnNodeFn = *const fn (ptr: *const anyopaque, node: NodeWrapper, ctx: LinterContext) anyerror!void;
+
+pub const Rule = struct {
+    name: string,
+    ptr: *anyopaque,
+    runOnNodeFn: RunOnNodeFn,
+
+    pub fn init(ptr: anytype) Rule {
+        const T = @TypeOf(ptr);
+        const ptr_info = @typeInfo(T);
+        const name = getRuleName(ptr_info);
+
+        // comptime if (!@hasDecl(child, "Name")) {
+        //     @compileError("Rule must have a Name field");
+        // };
+
+        const gen = struct {
+            pub fn runOnNode(pointer: *const anyopaque, node: NodeWrapper, ctx: LinterContext) anyerror!void {
+                // if (@hasDecl(T, "runOnNode")) {
+                // const self: T = @ptrCast(@alignCast(pointer));
+                const self: T = @ptrCast(@constCast(pointer));
+                return ptr_info.Pointer.child.runOnNode(self, node, ctx);
+                // }
+            }
+        };
+
+        return .{
+            .name = name,
+            .ptr = ptr,
+            .runOnNodeFn = gen.runOnNode,
+        };
+    }
+
+    pub fn runOnNode(self: *const Rule, node: NodeWrapper, ctx: LinterContext) !void {
+        return self.runOnNodeFn(self.ptr, node, ctx);
+    }
+};
+
+// test "simple rules" {
+//     const NoUndefined = struct {
+//         pub const Name = "NoUndefined";
+//
+//         pub fn runOnNode(self: *NoUndefined, node: *const Ast.Node) void {
+//             switch (node.tag) {
+//                 .identifier => {
+//                     node.main_token
+//                     if (ident == "undefined") {
+//                         std.debug.print("Error: found 'undefined' identifier\n", .{});
+//                     }
+//                 },
+//                 else => {},
+//                 },
+//                 else => {},
+//             }
+//             node.tag
+//             const decl = node.?;
+//             if (decl == null) {
+//                 return;
+//             }
+//             if (decl.NodeType == Ast.NodeTypeVariableDeclaration) {
+//                 const var_decl = decl.VariableDeclaration;
+//                 if (var_decl.type == null) {
+//                     std.debug.print("Error: variable declaration has no type\n", .{});
+//                 }
+//             }
+//         }
+//     };
+//     }
+// }
+
+fn getRuleName(ty: std.builtin.Type) string {
+    switch (ty) {
+        .Pointer => {
+            const child = ty.Pointer.child;
+            if (!@hasDecl(child, "Name")) {
+                @panic("Rule must have a Name field");
+            }
+            return child.Name;
+        },
+        else => @panic("Rule must be a pointer"),
+    }
+}

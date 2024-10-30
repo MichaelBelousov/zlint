@@ -37,3 +37,6 @@ fmt:
 lint:
     zig fmt --check src/**/*.zig
     typos
+
+clean:
+    rm -rf zig-out .zig-cache
