@@ -1,6 +1,6 @@
 const std = @import("std");
 const Ast = std.zig.Ast;
-const LinterContext = @import("../lint.zig").LinterContext;
+const LinterContext = @import("../lint.zig").Context;
 const Rule = @import("../rule.zig").Rule;
 const NodeWrapper = @import("../rule.zig").NodeWrapper;
 
@@ -16,6 +16,9 @@ pub const NoUndefined = struct {
         if (node.tag != .identifier) return;
         const name = ast.tokenSlice(node.main_token);
         print("found identifier: {s}\n", .{name});
+        if (std.mem.eql(u8, name, "undefined")) {
+            ctx.diagnostic("Do not use undefined.", node.loc);
+        }
     }
 
     pub fn rule(self: *NoUndefined) Rule {

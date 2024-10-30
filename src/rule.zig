@@ -5,7 +5,7 @@ const Allocator = std.mem.Allocator;
 const Ast = std.zig.Ast;
 
 const string = @import("str.zig").string;
-const LinterContext = linter.LinterContext;
+const LinterContext = linter.Context;
 
 pub const NodeWrapper = struct {
     node: *const Ast.Node,
@@ -24,12 +24,9 @@ pub const Rule = struct {
         const ptr_info = @typeInfo(T);
         const name = getRuleName(ptr_info);
 
-        // comptime if (!@hasDecl(child, "Name")) {
-        //     @compileError("Rule must have a Name field");
-        // };
-
         const gen = struct {
             pub fn runOnNode(pointer: *const anyopaque, node: NodeWrapper, ctx: LinterContext) anyerror!void {
+                // TODO
                 // if (@hasDecl(T, "runOnNode")) {
                 // const self: T = @ptrCast(@alignCast(pointer));
                 const self: T = @ptrCast(@constCast(pointer));
