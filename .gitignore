@@ -1,0 +1,11 @@
+# build artifacts
+zig-out
+.zig-cache
+
+# os
+.DS_Store
+
+# editor
+*.swp
+*.swo
+.idea
