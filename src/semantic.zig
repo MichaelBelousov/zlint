@@ -13,13 +13,9 @@
 //! an entire linked binary or library; rather it refers to a single parsed
 //! file.
 
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-const Ast = std.zig.Ast;
-const Type = std.builtin.Type;
-
-const string = @import("str.zig").string;
-const assert = std.debug.assert;
+sybmols: SymbolTable,
+scopes: ScopeTree,
+ast: Ast,
 
 /// A declared variable/function/whatever.
 ///
@@ -122,3 +118,11 @@ pub const ScopeTree = struct {
         return scope;
     }
 };
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Ast = std.zig.Ast;
+const Type = std.builtin.Type;
+
+const string = @import("str.zig").string;
+const assert = std.debug.assert;
