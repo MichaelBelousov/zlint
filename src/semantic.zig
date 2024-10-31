@@ -167,6 +167,10 @@ pub const Builder = struct {
         semantic: Semantic,
         errors: std.ArrayList(Error),
 
+        pub fn hasErrors(self: *Result) bool {
+            return self.errors.len != 0;
+        }
+
         /// Free the error list, leaving `semantic` untouched.
         pub fn deinitErrors(self: *Result) void {
             for (self.errors.items) |err| {
@@ -184,7 +188,7 @@ const Ast = std.zig.Ast;
 const Type = std.builtin.Type;
 const assert = std.debug.assert;
 
-const Semantic = @import("./semantic/Semantic.zig");
+pub const Semantic = @import("./semantic/Semantic.zig");
 const Error = @import("./Error.zig");
 const Span = @import("./source.zig").Span;
 

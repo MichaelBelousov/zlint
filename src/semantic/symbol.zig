@@ -11,7 +11,7 @@ const string = @import("../str.zig").string;
 /// A declared variable/function/whatever.
 ///
 /// Type: `pub struct Symbol<'a>`
-const Symbol = struct {
+pub const Symbol = struct {
     /// Identifier name.
     ///
     /// Symbols only borrow their names. These string slices reference data in
@@ -76,7 +76,7 @@ const Symbol = struct {
 ///   pub fn bang() void {},          // export
 /// };
 /// ```
-const SymbolTable = struct {
+pub const SymbolTable = struct {
     /// Indexed by symbol id.
     ///
     /// Do not write to this list directly.
