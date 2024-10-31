@@ -1,6 +1,9 @@
 const std = @import("std");
 const _rule = @import("rule.zig");
-const Source = @import("source.zig").Source;
+const _source = @import("source.zig");
+
+const Source = _source.Source;
+const Span = _source.Span;
 
 const Allocator = std.mem.Allocator;
 const Ast = std.zig.Ast;
@@ -15,7 +18,13 @@ const string = @import("str.zig").string;
 // rules
 const NoUndefined = @import("rules/no_undefined.zig").NoUndefined;
 
-pub const Error = struct { message: []const u8, loc: std.zig.Loc, rule_name: []const u8, source: *const Source };
+pub const Error = struct {
+    // line break
+    message: []const u8,
+    span: Span,
+    rule_name: []const u8,
+    source: *const Source,
+};
 
 /// Context is only valid over the lifetime of a Source and the min lifetime of all rules
 pub const Context = struct {
@@ -30,13 +39,12 @@ pub const Context = struct {
 
     const ErrorList = std.ArrayList(Error);
 
-    fn init(gpa: Allocator, ast: *const Ast, rule: *const Rule, source: *const Source) Context {
+    fn init(gpa: Allocator, ast: *const Ast, source: *const Source) Context {
         return Context{
             // line break
             .ast = ast,
             .gpa = gpa,
             .errors = ErrorList.init(gpa),
-            .curr_rule_name = rule.name,
             .source = source,
         };
     }
@@ -46,14 +54,19 @@ pub const Context = struct {
         self.* = undefined;
     }
 
-    pub fn diagnostic(self: *Context, message: []const u8, loc: std.zig.Loc) void {
+    pub inline fn updateForRule(self: *Context, rule: *const Rule) void {
+        self.curr_rule_name = rule.name;
+    }
+
+    pub fn diagnostic(self: *Context, message: []const u8, loc: Span) void {
+        // TODO: handle errors better
         self.errors.append(Error{
             // line break
             .message = message,
-            .loc = loc,
+            .span = loc,
             .rule_name = self.curr_rule_name,
             .source = self.source,
-        });
+        }) catch @panic("Cannot add new error: Out of memory");
     }
 };
 
@@ -75,7 +88,7 @@ pub const Linter = struct {
 
     pub fn runOnSource(self: *Linter, source: *Source) !void {
         const ast = try source.parse();
-        const ctx = Context.init(self.gpa, &ast);
+        var ctx = Context.init(self.gpa, &ast, source);
         print("running linter on source with {d} rules\n", .{self.rules.items.len});
 
         var i: usize = 0;
@@ -84,8 +97,8 @@ pub const Linter = struct {
             const node = ctx.ast.nodes.get(i);
             const wrapper: NodeWrapper = .{ .node = &node, .idx = @intCast(i) };
             for (self.rules.items) |rule| {
-                print("running rule: {s}\n", .{rule.name});
-                rule.runOnNode(wrapper, ctx) catch |e| {
+                ctx.updateForRule(&rule);
+                rule.runOnNode(wrapper, &ctx) catch |e| {
                     return e;
                 };
             }

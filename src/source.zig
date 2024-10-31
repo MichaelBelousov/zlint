@@ -1,9 +1,11 @@
 const std = @import("std");
+const str = @import("str.zig");
 const fs = std.fs;
 
 const Allocator = std.mem.Allocator;
 const Ast = std.zig.Ast;
 const assert = std.debug.assert;
+const string = str.string;
 
 pub const Source = struct {
     contents: [:0]u8,
@@ -35,4 +37,27 @@ pub const Source = struct {
         self.ast = try Ast.parse(self.gpa, self.contents, .zig);
         return self.ast orelse unreachable;
     }
+};
+
+pub const LocationSpan = struct {
+    span: Span,
+    location: Location,
+};
+pub const Span = struct {
+    start: u32,
+    end: u32,
+};
+
+pub const Location = struct {
+    line: u32,
+    column: u32,
+
+    pub fn fromSpan(contents: string, span: Span) Location {
+        const l = std.zig.findLineColumn(contents, @intCast(span.start));
+        return Location{
+            .line = l.line,
+            .column = l.column,
+        };
+    }
+    // TODO: toSpan()
 };

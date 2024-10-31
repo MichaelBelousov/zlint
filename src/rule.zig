@@ -10,9 +10,13 @@ const LinterContext = linter.Context;
 pub const NodeWrapper = struct {
     node: *const Ast.Node,
     idx: Ast.Node.Index,
+    pub inline fn getMainTokenOffset(self: *const NodeWrapper, ast: *const Ast) u32 {
+        const starts = ast.tokens.items(.start);
+        return starts[self.node.main_token];
+    }
 };
 
-const RunOnNodeFn = *const fn (ptr: *const anyopaque, node: NodeWrapper, ctx: LinterContext) anyerror!void;
+const RunOnNodeFn = *const fn (ptr: *const anyopaque, node: NodeWrapper, ctx: *LinterContext) anyerror!void;
 
 pub const Rule = struct {
     name: string,
@@ -25,7 +29,7 @@ pub const Rule = struct {
         const name = getRuleName(ptr_info);
 
         const gen = struct {
-            pub fn runOnNode(pointer: *const anyopaque, node: NodeWrapper, ctx: LinterContext) anyerror!void {
+            pub fn runOnNode(pointer: *const anyopaque, node: NodeWrapper, ctx: *LinterContext) anyerror!void {
                 // TODO
                 // if (@hasDecl(T, "runOnNode")) {
                 // const self: T = @ptrCast(@alignCast(pointer));
@@ -42,7 +46,7 @@ pub const Rule = struct {
         };
     }
 
-    pub fn runOnNode(self: *const Rule, node: NodeWrapper, ctx: LinterContext) !void {
+    pub fn runOnNode(self: *const Rule, node: NodeWrapper, ctx: *LinterContext) !void {
         return self.runOnNodeFn(self.ptr, node, ctx);
     }
 };
