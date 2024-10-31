@@ -24,10 +24,9 @@ pub const Scope = struct {
         s_enum: bool,
         /// Created by an enum declaration.
         s_union: bool,
-        /// Created by a block statement, loop, if statement, etc. 
+        /// Created by a block statement, loop, if statement, etc.
         s_block: bool,
     };
-
 };
 
 /// Stores variable scopes created by a zig program.
