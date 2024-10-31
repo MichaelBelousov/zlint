@@ -1,3 +1,11 @@
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Ast = std.zig.Ast;
+const Type = std.builtin.Type;
+
+const string = @import("../str.zig").string;
+const assert = std.debug.assert;
+
 pub const Scope = struct {
     /// Unique identifier for this scope.
     id: Id,
@@ -15,17 +23,17 @@ pub const Scope = struct {
     /// TODO: Should this be an enum?
     pub const Flags = packed struct {
         /// Top-level "module" scope
-        s_top: bool,
+        s_top: bool = false,
         /// Created by a function declaration.
-        s_function: bool,
+        s_function: bool = false,
         /// Created by a struct declaration.
-        s_struct: bool,
+        s_struct: bool = false,
         /// Created by an enum declaration.
-        s_enum: bool,
+        s_enum: bool = false,
         /// Created by an enum declaration.
-        s_union: bool,
+        s_union: bool = false,
         /// Created by a block statement, loop, if statement, etc.
-        s_block: bool,
+        s_block: bool = false,
     };
 };
 
@@ -43,7 +51,7 @@ pub const ScopeTree = struct {
     ///
     /// ## Errors
     /// If allocation fails. Usually due to OOM.
-    pub fn addScope(self: *ScopeTree, alloc: Allocator, parent: ?Scope.Id, flags: Scope.Flags) !Scope {
+    pub fn addScope(self: *ScopeTree, alloc: Allocator, parent: ?Scope.Id, flags: Scope.Flags) !*Scope {
         assert(self.scopes.items.len < Scope.MAX_ID);
         const id: Scope.Id = @intCast(self.scopes.items.len);
 
@@ -80,11 +88,3 @@ pub const ScopeTree = struct {
         self.children.deinit(alloc);
     }
 };
-
-const std = @import("std");
-const Allocator = std.mem.Allocator;
-const Ast = std.zig.Ast;
-const Type = std.builtin.Type;
-
-const string = @import("str.zig").string;
-const assert = std.debug.assert;

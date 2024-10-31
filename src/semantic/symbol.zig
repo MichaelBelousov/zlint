@@ -1,3 +1,13 @@
+const std = @import("std");
+
+const Allocator = std.mem.Allocator;
+const Ast = std.zig.Ast;
+const Scope = @import("scope.zig").Scope;
+const Type = std.builtin.Type;
+
+const assert = std.debug.assert;
+const string = @import("../str.zig").string;
+
 /// A declared variable/function/whatever.
 ///
 /// Type: `pub struct Symbol<'a>`
@@ -35,6 +45,13 @@ const Symbol = struct {
     pub const Visibility = enum {
         public,
         private,
+    };
+    pub const Flags = packed struct {
+        /// Comptime symbol.
+        ///
+        /// Not `true` for inferred comptime parameters. That is, this is only
+        /// `true` when the `comptime` modifier is present.
+        s_comptime: bool = false,
     };
 };
 
@@ -77,7 +94,7 @@ const SymbolTable = struct {
 
     const SymbolIdList = std.ArrayListUnmanaged(Symbol.Id);
 
-    pub fn addSymbol(self: *SymbolTable, alloc: Allocator, name: string, ty: ?Type, scope_id: Scope.Id, visibility: Symbol.Visibility) !Symbol {
+    pub fn addSymbol(self: *SymbolTable, alloc: Allocator, name: string, ty: ?Type, scope_id: Scope.Id, visibility: Symbol.Visibility) !*Symbol {
         assert(self.symbols.items.len < Symbol.MAX_ID);
         const id: Symbol.Id = @intCast(self.symbols.items.len);
         const symbol: *Symbol = try self.symbols.addOne(alloc);
@@ -100,7 +117,7 @@ const SymbolTable = struct {
         assert(self.symbols.items.len == self.members.items.len);
         assert(self.symbols.items.len == self.exports.items.len);
 
-        return error.NotImplemented;
+        return symbol;
     }
 
     pub fn deinit(self: *SymbolTable, alloc: Allocator) void {
@@ -117,13 +134,3 @@ const SymbolTable = struct {
         self.exports.deinit(alloc);
     }
 };
-
-const std = @import("std");
-
-const Allocator = std.mem.Allocator;
-const Ast = std.zig.Ast;
-const Scope = @import("scope.zig").Scope;
-const Type = std.builtin.Type;
-
-const assert = std.debug.assert;
-const string = @import("str.zig").string;
