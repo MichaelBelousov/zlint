@@ -20,14 +20,12 @@ pub const NoUndefined = struct {
 
         if (node.tag != .identifier) return;
         const name = ast.tokenSlice(node.main_token);
-        print("found identifier: {s}\n", .{name});
-        if (std.mem.eql(u8, name, "undefined")) {
-            // const location = ast.tokenLocation(0, node.main_token);
-            const start = wrapper.getMainTokenOffset(ast);
-            const len: u32 = @intCast(name.len);
-            const span = Span{ .start = start, .end = start + len };
-            ctx.diagnostic("Do not use undefined.", span);
-        }
+        if (!std.mem.eql(u8, name, "undefined")) return;
+        // const location = ast.tokenLocation(0, node.main_token);
+        const start = wrapper.getMainTokenOffset(ast);
+        const len: u32 = @intCast(name.len);
+        const span = Span{ .start = start, .end = start + len };
+        ctx.diagnostic("Do not use undefined.", span);
     }
 
     pub fn rule(self: *NoUndefined) Rule {
