@@ -30,6 +30,7 @@ pub const Source = struct {
         self.* = undefined;
     }
 
+    /// @deprecated
     pub fn parse(self: *Source) !Ast {
         if (self.ast) |ast| {
             return ast;

@@ -42,23 +42,12 @@ const RuleFilter = struct {
     severity: Severity,
 };
 
-/// Severity level for issues found by lint rules.
-///
-/// Each lint rule gets assigned a severity level.
-/// - Errors cause a non-zero exit code. They are highlighted in red.
-/// - Warnings do not affect exit code and are yellow.
-/// - Off skips the rule entirely.
-const Severity = enum {
-    err,
-    warning,
-    off,
-};
-
 const Config = @This();
-const Parsed = std.json.Parsed;
 
 const std = @import("std");
 const fs = std.fs;
-
 const Allocator = std.mem.Allocator;
+const Parsed = std.json.Parsed;
+
+const Severity = @import("Error.zig").Severity;
 const string = @import("str.zig").string;

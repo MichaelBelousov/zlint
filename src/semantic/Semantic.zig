@@ -13,7 +13,32 @@
 //! an entire linked binary or library; rather it refers to a single parsed
 //! file.
 
-const 
+sybmols: SymbolTable = .{},
+scopes: ScopeTree = .{},
+ast: Ast,
+gpa: Allocator,
+/// Used to allocate AST nodes
+arena: ArenaAllocator,
+
+/// Initialize a semantic analysis context for a zig program.
+pub fn init(gpa: Allocator, source: stringSlice) !Semantic {
+    const arena = ArenaAllocator.init(gpa);
+    const ast = try Ast.parse(arena.allocator(), source, .zig);
+
+    return Semantic{ .ast = ast, .gpa = gpa, .arena = arena };
+}
+
+pub fn deinit(self: *Semantic) void {
+    // NOTE: ast is arena allocated, so no need to deinit it. freeing the arena
+    // is sufficient.
+    self.arena.deinit();
+    self.symbols.deinit(self.gpa);
+    self.scopes.deinit(self.gpa);
+    // SAFETY: *self is no longer valid after deinitilization.
+    self.* = undefined;
+}
+
+const Semantic = @This();
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -23,12 +48,11 @@ const Type = std.builtin.Type;
 const assert = std.debug.assert;
 
 const scope = @import("scope.zig");
-const symbol = @import("semantic/symbol.zig");
-const Semantic = @import("semantic/Semantic.zig");
-const Scope = scope.Scope;
-const Symbol = symbol.Symbol;
-const ScopeTree = scope.ScopeTree;
-const SymbolTable = symbol.SymbolTable;
+const symbol = @import("symbol.zig");
+pub const Scope = scope.Scope;
+pub const Symbol = symbol.Symbol;
+pub const ScopeTree = scope.ScopeTree;
+pub const SymbolTable = symbol.SymbolTable;
 
 const str = @import("str.zig");
 const string = str.string;
