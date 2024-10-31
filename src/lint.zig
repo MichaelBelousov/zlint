@@ -26,6 +26,8 @@ pub const Error = struct {
     source: *const Source,
 };
 
+const ErrorList = std.ArrayList(Error);
+
 /// Context is only valid over the lifetime of a Source and the min lifetime of all rules
 pub const Context = struct {
     /// Borrowed reference to parsed AST
@@ -36,8 +38,6 @@ pub const Context = struct {
     /// this slice is 'static (in data segment) and should never be free'd
     curr_rule_name: string = "",
     source: *const Source,
-
-    const ErrorList = std.ArrayList(Error);
 
     fn init(gpa: Allocator, ast: *const Ast, source: *const Source) Context {
         return Context{
@@ -86,7 +86,7 @@ pub const Linter = struct {
         self.rules.deinit();
     }
 
-    pub fn runOnSource(self: *Linter, source: *Source) !void {
+    pub fn runOnSource(self: *Linter, source: *Source) !ErrorList {
         const ast = try source.parse();
         var ctx = Context.init(self.gpa, &ast, source);
         print("running linter on source with {d} rules\n", .{self.rules.items.len});
@@ -104,5 +104,6 @@ pub const Linter = struct {
             }
             i += 1;
         }
+        return ctx.errors;
     }
 };

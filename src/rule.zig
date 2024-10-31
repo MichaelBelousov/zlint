@@ -10,6 +10,7 @@ const LinterContext = linter.Context;
 pub const NodeWrapper = struct {
     node: *const Ast.Node,
     idx: Ast.Node.Index,
+
     pub inline fn getMainTokenOffset(self: *const NodeWrapper, ast: *const Ast) u32 {
         const starts = ast.tokens.items(.start);
         return starts[self.node.main_token];

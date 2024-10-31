@@ -22,7 +22,11 @@ pub fn main() !void {
     var linter = Linter.init(gpa);
     defer linter.deinit();
 
-    try linter.runOnSource(&source);
+    var errors = try linter.runOnSource(&source);
+    for (errors.items) |err| {
+        print("{s}\n", .{err.message});
+    }
+    errors.deinit();
 
 }
 
