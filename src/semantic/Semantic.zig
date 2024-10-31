@@ -13,7 +13,7 @@
 //! an entire linked binary or library; rather it refers to a single parsed
 //! file.
 
-sybmols: SymbolTable = .{},
+symbols: SymbolTable = .{},
 scopes: ScopeTree = .{},
 ast: Ast, // NOTE: allocated in _arena
 _gpa: Allocator,

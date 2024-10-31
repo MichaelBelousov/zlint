@@ -60,17 +60,13 @@ pub const ScopeTree = struct {
         scope.* = Scope{ .id = id, .parent = parent, .flags = flags };
 
         // set up it's child list
-        {
-            const childList = try self.children.addOne(null, alloc);
-            childList.* = .{};
-        }
+        try self.children.append(alloc, .{});
 
         // Add it to its parent's list of child scopes
         if (parent != null) {
-            assert(parent < self.children.items.len);
-            const parentChildren: ScopeIdList = self.children.items[parent];
-            const childEl = try parentChildren.addOne(id, alloc);
-            childEl.* = id;
+            assert(parent.? < self.children.items.len);
+            var parentChildren: ScopeIdList = self.children.items[parent.?];
+            try parentChildren.append(alloc, id);
         }
 
         // sanity check
@@ -82,9 +78,19 @@ pub const ScopeTree = struct {
     pub fn deinit(self: *ScopeTree, alloc: Allocator) void {
         self.scopes.deinit(alloc);
 
-        for (self.children.items) |children| {
-            children.deinit(alloc);
+        // for (self.children.items) |children| {
+        //     children.deinit(alloc);
+        // }
+        // self.children.deinit(alloc);
+        {
+            var i: usize = 0;
+            const len = self.children.items.len;
+            while (i < len) {
+                var children = self.children.items[i];
+                children.deinit(alloc);
+                i += 1;
+            }
+            self.children.deinit(alloc);
         }
-        self.children.deinit(alloc);
     }
 };

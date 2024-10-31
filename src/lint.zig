@@ -1,9 +1,12 @@
 const std = @import("std");
 const _rule = @import("rule.zig");
 const _source = @import("source.zig");
+const _semantic = @import("semantic.zig");
 
 const Source = _source.Source;
 const Span = _source.Span;
+const Semantic = _semantic.Semantic;
+const SemanticBuilder = _semantic.Builder;
 
 const Allocator = std.mem.Allocator;
 const Ast = std.zig.Ast;
@@ -30,8 +33,7 @@ const ErrorList = std.ArrayList(Error);
 
 /// Context is only valid over the lifetime of a Source and the min lifetime of all rules
 pub const Context = struct {
-    /// Borrowed reference to parsed AST
-    ast: *const Ast,
+    semantic: *const Semantic,
     gpa: Allocator,
     /// Errors collected by lint rules
     errors: ErrorList,
@@ -39,10 +41,10 @@ pub const Context = struct {
     curr_rule_name: string = "",
     source: *const Source,
 
-    fn init(gpa: Allocator, ast: *const Ast, source: *const Source) Context {
+    fn init(gpa: Allocator, semantic: *const Semantic, source: *const Source) Context {
         return Context{
             // line break
-            .ast = ast,
+            .semantic = semantic,
             .gpa = gpa,
             .errors = ErrorList.init(gpa),
             .source = source,
@@ -52,6 +54,10 @@ pub const Context = struct {
     fn deinit(self: *Context) void {
         self.errors.deinit();
         self.* = undefined;
+    }
+
+    pub fn ast(self: *const Context) *const Ast {
+        return &self.semantic.ast;
     }
 
     pub inline fn updateForRule(self: *Context, rule: *const Rule) void {
@@ -87,14 +93,21 @@ pub const Linter = struct {
     }
 
     pub fn runOnSource(self: *Linter, source: *Source) !ErrorList {
-        const ast = try source.parse();
-        var ctx = Context.init(self.gpa, &ast, source);
+        // const ast = try source.parse();
+        var semantic_result = try SemanticBuilder.build(self.gpa, source.contents);
+        // TODO
+        if (semantic_result.hasErrors()) {
+            @panic("semantic analysis failed");
+        }
+        semantic_result.deinitErrors();
+        const semantic = semantic_result.semantic;
+        var ctx = Context.init(self.gpa, &semantic, source);
         print("running linter on source with {d} rules\n", .{self.rules.items.len});
 
         var i: usize = 0;
-        while (i < ctx.ast.nodes.len) {
+        while (i < ctx.semantic.ast.nodes.len) {
             assert(i < std.math.maxInt(u32));
-            const node = ctx.ast.nodes.get(i);
+            const node = ctx.semantic.ast.nodes.get(i);
             const wrapper: NodeWrapper = .{ .node = &node, .idx = @intCast(i) };
             for (self.rules.items) |rule| {
                 ctx.updateForRule(&rule);

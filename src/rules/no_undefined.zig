@@ -16,7 +16,7 @@ pub const NoUndefined = struct {
 
     pub fn runOnNode(_: *const NoUndefined, wrapper: NodeWrapper, ctx: *LinterContext) void {
         const node = wrapper.node;
-        const ast = ctx.ast;
+        const ast = ctx.ast();
 
         if (node.tag != .identifier) return;
         const name = ast.tokenSlice(node.main_token);

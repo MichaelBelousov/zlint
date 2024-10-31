@@ -21,7 +21,7 @@ pub const Symbol = struct {
     name: string,
     /// This symbol's type. Only present if statically determinable, since
     /// analysis doesn't currently do type checking.
-    ty: ?Type,
+    // ty: ?Type,
     /// Unique identifier for this symbol.
     id: Id,
     /// Scope this symbol is declared in.
@@ -94,24 +94,23 @@ pub const SymbolTable = struct {
 
     const SymbolIdList = std.ArrayListUnmanaged(Symbol.Id);
 
-    pub fn addSymbol(self: *SymbolTable, alloc: Allocator, name: string, ty: ?Type, scope_id: Scope.Id, visibility: Symbol.Visibility) !*Symbol {
+    pub fn addSymbol(self: *SymbolTable, alloc: Allocator, name: string, scope_id: Scope.Id, visibility: Symbol.Visibility) !*Symbol {
         assert(self.symbols.items.len < Symbol.MAX_ID);
+
         const id: Symbol.Id = @intCast(self.symbols.items.len);
         const symbol: *Symbol = try self.symbols.addOne(alloc);
         symbol.* = Symbol{
             // line break
             .name = name,
-            .ty = ty,
+            // .ty = ty,
             .id = id,
             .scope = scope_id,
             .visibility = visibility,
             .decl = Ast.Node.Index{ .index = 0, .scope = 0 },
         };
 
-        const members: *SymbolIdList = try self.members.addOne(alloc);
-        const exports: *SymbolIdList = try self.exports.addOne(alloc);
-        members.* = .{};
-        exports.* = .{};
+        try self.members.append(alloc, id);
+        try self.exports.append(alloc, id);
 
         // sanity check
         assert(self.symbols.items.len == self.members.items.len);
@@ -123,14 +122,26 @@ pub const SymbolTable = struct {
     pub fn deinit(self: *SymbolTable, alloc: Allocator) void {
         self.symbols.deinit(alloc);
 
-        for (self.members.items) |members| {
-            members.deinit(alloc);
+        {
+            var i: usize = 0;
+            const len = self.members.items.len;
+            while (i < len) {
+                var members = self.members.items[i];
+                members.deinit(alloc);
+                i += 1;
+            }
+            self.members.deinit(alloc);
         }
-        self.members.deinit(alloc);
 
-        for (self.exports.items) |exports| {
-            exports.deinit(alloc);
+        {
+            var i: usize = 0;
+            const len = self.exports.items.len;
+            while (i < len) {
+                var exports = self.exports.items[i];
+                exports.deinit(alloc);
+                i += 1;
+            }
+            self.exports.deinit(alloc);
         }
-        self.exports.deinit(alloc);
     }
 };

@@ -1,6 +1,6 @@
 message: string,
 severity: Severity = .err,
-labels: []Span = .{},
+labels: []Span = undefined,
 source_name: ?string = null,
 help: ?string = null,
 
@@ -16,6 +16,13 @@ pub fn newAtLocation(message: string, span: Span, source_name: string) Error {
         .source_name = source_name,
         .labels = [_]Span{ span },
     };
+}
+
+pub fn deinit(self: *Error, alloc: std.mem.Allocator) void {
+    alloc.free(self.message);
+    if (self.help != null) alloc.free(self.help.?);
+    if (self.source_name != null) alloc.free(self.source_name.?);
+    // if (self.labels != null) alloc.free(self.labels);
 }
 
 /// Severity level for issues found by lint rules.

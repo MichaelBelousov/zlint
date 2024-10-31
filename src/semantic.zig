@@ -30,7 +30,7 @@ pub const Builder = struct {
         var builder = try Builder.init(gpa);
         errdefer builder.deinit();
         // NOTE: ast is moved
-        const ast = try builder.parse(builder._arena.allocator(), source, .zig);
+        const ast = try builder.parse(source);
         builder._semantic = Semantic{
             .ast = ast,
             ._arena = builder._arena,
@@ -62,6 +62,9 @@ pub const Builder = struct {
             ._errors = std.ArrayList(Error).init(gpa),
         };
     }
+    pub fn deinit(self: *Builder) void {
+        self._scope_stack.deinit(self._gpa);
+    }
 
     fn parse(self: *Builder, source: stringSlice) !Ast {
         const ast = try Ast.parse(self._arena.allocator(), source, .zig);
@@ -72,7 +75,7 @@ pub const Builder = struct {
             for (ast.errors) |ast_err| {
                 // Not an error. TODO: verify this assumption
                 if (ast_err.is_note) continue;
-                self.addAstError(ast, ast_err);
+                self.addAstError(&ast, ast_err) catch @panic ("Out of memory");
             }
         }
 
@@ -84,10 +87,10 @@ pub const Builder = struct {
     // =========================================================================
 
     fn visitNode(self: *Builder, node: Ast.Node.Index) void {
-        const tag: Ast.Node.Tag = self._semantic.ast.nodes.items(.tag)[node.index];
+        const tag: Ast.Node.Tag = self._semantic.ast.nodes.items(.tag)[node];
         switch (tag) {
             .root => unreachable, // root node is never referenced.
-            .global_var_decl | .local_var_decl | .simple_var_decl | .aligned_var_decl => self.visitVarDecl(node),
+            .global_var_decl, .local_var_decl, .simple_var_decl, .aligned_var_decl => self.visitVarDecl(node),
             // .@"usingnamespace" => self.visitUsingNamespace(node),
             else => std.debug.panic("unimplemented node tag: {any}", .{tag}),
         }
@@ -102,7 +105,7 @@ pub const Builder = struct {
     // ======================== SCOPE/SYMBOL MANAGEMENT ========================
     // =========================================================================
 
-    // NOTE: root scope is entered differently to avoid uneccessary parent-null
+    // NOTE: root scope is entered differently to avoid unnecessary parent-null
     // checks. Parent is only ever null for root scopes.
 
     fn enterRootScope(self: *Builder) !void {
@@ -119,7 +122,7 @@ pub const Builder = struct {
         self._scope_stack.append(self._gpa, scope.id);
     }
 
-    inline fn assertRootScope(self: *const Builder) void {
+    fn assertRootScope(self: *const Builder) void {
         assert(self._scope_stack.items.len == 1);
         assert(self._scope_stack.items[0] == 0);
     }
@@ -130,16 +133,17 @@ pub const Builder = struct {
 
     fn addAstError(self: *Builder, ast: *const Ast, ast_err: Ast.Error) !void {
         const alloc = self._errors.allocator;
-        var msg = std.ArrayListUnmanaged(u8);
+        var msg: std.ArrayListUnmanaged(u8) = .{};
         defer msg.deinit(alloc);
-        ast.renderError(ast_err, msg.writer(alloc));
+        try ast.renderError(ast_err, msg.writer(alloc));
 
         // TODO: render `ast_err.extra.expected_tag`
         const byte_offset: Ast.ByteOffset = ast.tokens.items(.start)[ast_err.token];
         const loc = ast.tokenLocation(byte_offset, ast_err.token);
         const labels = .{Span{ .start = @intCast(loc.line_start), .end = @intCast(loc.line_end) }};
+        _ = labels;
 
-        return self.addErrorOwnedMessage(msg.toOwnedSlice(alloc), labels, null);
+        return self.addErrorOwnedMessage(try msg.toOwnedSlice(alloc), null);
     }
 
     /// Record an error encountered during parsing or analysis.
@@ -147,19 +151,21 @@ pub const Builder = struct {
     /// All parameters are borrowed. Errors own their data, so each parameter gets cloned onto the heap.
     fn addError(self: *Builder, message: string, labels: []Span, help: ?string) !void {
         const alloc = self._errors.allocator;
-        const heap_message = try alloc.dupeZ(message);
-        const heap_labels = try alloc.dupe(labels);
-        const heap_help: ?string = if (help == null) null else try alloc.dupeZ(help);
+        const heap_message = try alloc.dupeZ(u8, message);
+        const heap_labels = try alloc.dupe(Span, labels);
+        const heap_help: ?string = if (help == null) null else try alloc.dupeZ(help.?);
         const err = try Error{ .message = heap_message, .labels = heap_labels, .help = heap_help };
         try self._errors.append(err);
     }
 
     /// Create and record an error. `message` is an owned slice moved into the new Error.
-    fn addErrorOwnedMessage(self: *Builder, message: string, labels: []Span, help: ?string) !void {
+    // fn addErrorOwnedMessage(self: *Builder, message: string, labels: []Span, help: ?string) !void {
+    fn addErrorOwnedMessage(self: *Builder, message: string, help: ?string) !void {
         const alloc = self._errors.allocator;
-        const heap_labels = try alloc.dupe(labels);
-        const heap_help: ?string = if (help == null) null else try alloc.dupeZ(help);
-        const err = try Error{ .message = message, .labels = heap_labels, .help = heap_help };
+        // const heap_labels = try alloc.dupe(labels);
+        const heap_help: ?string = if (help == null) null else try alloc.dupeZ(u8, help.?);
+        const err = Error{ .message = message, .help = heap_help };
+        // const err = try Error{ .message = message, .labels = heap_labels, .help = heap_help };
         try self._errors.append(err);
     }
 
@@ -168,15 +174,19 @@ pub const Builder = struct {
         errors: std.ArrayList(Error),
 
         pub fn hasErrors(self: *Result) bool {
-            return self.errors.len != 0;
+            return self.errors.items.len != 0;
         }
 
         /// Free the error list, leaving `semantic` untouched.
         pub fn deinitErrors(self: *Result) void {
-            for (self.errors.items) |err| {
-                err.deinit(self.errors.allocator);
+            const err_alloc = self.errors.allocator;
+            var i: usize = 0;
+            const len = self.errors.items.len;
+            while (i < len) {
+                self.errors.items[i].deinit(err_alloc);
+                i += 1;
             }
-            self.errors.deinit(self.semantic.gpa);
+            self.errors.deinit();
         }
     };
 };
