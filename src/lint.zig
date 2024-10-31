@@ -99,6 +99,10 @@ pub const Linter = struct {
         if (semantic_result.hasErrors()) {
             @panic("semantic analysis failed");
         }
+        print("Symbols:\n", .{});
+        for (semantic_result.semantic.symbols.symbols.items) |symbol| {
+            print("\n\t{s} {any}", .{symbol.name, symbol});
+        }
         semantic_result.deinitErrors();
         const semantic = semantic_result.semantic;
         var ctx = Context.init(self.gpa, &semantic, source);

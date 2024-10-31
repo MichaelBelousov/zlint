@@ -31,6 +31,7 @@ pub const Symbol = struct {
     /// Usually a `var`/`const` declaration, function statement, etc.
     decl: Ast.Node.Index,
     visibility: Visibility,
+    flags: Flags,
 
     /// Uniquely identifies a symbol across a source file.
     pub const Id = u32;
@@ -94,7 +95,7 @@ pub const SymbolTable = struct {
 
     const SymbolIdList = std.ArrayListUnmanaged(Symbol.Id);
 
-    pub fn addSymbol(self: *SymbolTable, alloc: Allocator, name: string, scope_id: Scope.Id, visibility: Symbol.Visibility) !*Symbol {
+    pub fn addSymbol(self: *SymbolTable, alloc: Allocator, declaration_node: Ast.Node.Index, name: string, scope_id: Scope.Id, visibility: Symbol.Visibility, flags: Symbol.Flags) !*Symbol {
         assert(self.symbols.items.len < Symbol.MAX_ID);
 
         const id: Symbol.Id = @intCast(self.symbols.items.len);
@@ -106,11 +107,12 @@ pub const SymbolTable = struct {
             .id = id,
             .scope = scope_id,
             .visibility = visibility,
-            .decl = Ast.Node.Index{ .index = 0, .scope = 0 },
+            .flags = flags,
+            .decl = declaration_node
         };
 
-        try self.members.append(alloc, id);
-        try self.exports.append(alloc, id);
+        try self.members.append(alloc, .{});
+        try self.exports.append(alloc, .{});
 
         // sanity check
         assert(self.symbols.items.len == self.members.items.len);

@@ -43,8 +43,16 @@ pub const Builder = struct {
         builder.assertRootScope(); // sanity check
 
         // Zig guarantees that the root node ID is 0. We should be careful- they may decide to change this contract.
+        print("number of nodes: {d}\n", .{builder._semantic.ast.nodes.len});
+        var i: usize = 0;
+        while (i < builder._semantic.ast.tokens.len) {
+            const tok = builder._semantic.ast.tokens.get(i);
+            print("token ({d}): {any}\n", .{ i, tok });
+            i += 1;
+        }
+
         for (builder._semantic.ast.rootDecls()) |node| {
-            builder.visitNode(node);
+            builder.visitNode(node) catch |e| return e;
             builder.assertRootScope();
         }
 
@@ -62,6 +70,7 @@ pub const Builder = struct {
             ._errors = std.ArrayList(Error).init(gpa),
         };
     }
+
     pub fn deinit(self: *Builder) void {
         self._scope_stack.deinit(self._gpa);
     }
@@ -75,7 +84,7 @@ pub const Builder = struct {
             for (ast.errors) |ast_err| {
                 // Not an error. TODO: verify this assumption
                 if (ast_err.is_note) continue;
-                self.addAstError(&ast, ast_err) catch @panic ("Out of memory");
+                self.addAstError(&ast, ast_err) catch @panic("Out of memory");
             }
         }
 
@@ -86,19 +95,46 @@ pub const Builder = struct {
     // ================================= VISIT =================================
     // =========================================================================
 
-    fn visitNode(self: *Builder, node: Ast.Node.Index) void {
-        const tag: Ast.Node.Tag = self._semantic.ast.nodes.items(.tag)[node];
+    fn visitNode(self: *Builder, node_id: NodeIndex) !void {
+        const tag: Ast.Node.Tag = self._semantic.ast.nodes.items(.tag)[node_id];
         switch (tag) {
             .root => unreachable, // root node is never referenced.
-            .global_var_decl, .local_var_decl, .simple_var_decl, .aligned_var_decl => self.visitVarDecl(node),
+            .global_var_decl => {
+                const decl = self.AST().fullVarDecl(node_id) orelse unreachable;
+                self.visitGlobalVarDecl(node_id, decl);
+            },
+            .local_var_decl, .simple_var_decl, .aligned_var_decl => {
+                const decl = self.AST().fullVarDecl(node_id) orelse unreachable;
+                return self.visitVarDecl(node_id, decl);
+            },
             // .@"usingnamespace" => self.visitUsingNamespace(node),
             else => std.debug.panic("unimplemented node tag: {any}", .{tag}),
         }
     }
 
-    fn visitVarDecl(self: *Builder, node: Ast.Node.Index) void {
-        const var_decl = self._semantic.ast.fullVarDecl(node) orelse unreachable;
-        std.debug.print("{any}", .{var_decl});
+    fn visitGlobalVarDecl(self: *Builder, node_id: NodeIndex, var_decl: Ast.full.VarDecl) void {
+        _ = self;
+        _ = node_id;
+        _ = var_decl;
+        @panic("todo: visitGlobalVarDecl");
+    }
+
+    fn visitVarDecl(self: *Builder, node_id: NodeIndex, var_decl: Ast.full.VarDecl) !void {
+        const node = self.getNode(node_id);
+        // main_token points to `var`, `const` keyword. `.identifier` comes immediately afterwards
+        const identifier: string = self.getIdentifier(node.main_token + 1);
+        const flags = Symbol.Flags{ .s_comptime = var_decl.comptime_token != null };
+        _ = try self.declareSymbol(node_id, identifier, Semantic.Symbol.Visibility.public, flags);
+
+        const main = self.getToken(node.main_token);
+        const lhs = if (node.data.lhs == 0) null else self.getNode(node.data.lhs);
+        const rhs = if (node.data.rhs == 0) null else self.getNode(node.data.rhs);
+
+        std.debug.print("node ({d}): {any}\n", .{ node_id, node });
+        std.debug.print("main: {any}\n", .{main});
+        std.debug.print("lhs: {any}\n", .{lhs});
+        std.debug.print("rhs: {any}\n", .{rhs});
+        std.debug.print("{any}\n\n", .{var_decl});
     }
 
     // =========================================================================
@@ -108,7 +144,7 @@ pub const Builder = struct {
     // NOTE: root scope is entered differently to avoid unnecessary parent-null
     // checks. Parent is only ever null for root scopes.
 
-    fn enterRootScope(self: *Builder) !void {
+    inline fn enterRootScope(self: *Builder) !void {
         assert(self._scope_stack.items.len == 0);
         const root_scope = try self._semantic.scopes.addScope(self._gpa, null, .{ .s_top = true });
         assert(root_scope.id == 0);
@@ -122,9 +158,82 @@ pub const Builder = struct {
         self._scope_stack.append(self._gpa, scope.id);
     }
 
+    inline fn exitScope(self: *Builder) void {
+        assert(self._scope_stack.items.len > 2); // cannot pop root scope
+        self._scope_stack.pop();
+    }
+
+    inline fn currentScope(self: *const Builder) Semantic.Scope.Id {
+        assert(self._scope_stack.items.len != 0);
+        return self._scope_stack.getLast();
+    }
+
     fn assertRootScope(self: *const Builder) void {
         assert(self._scope_stack.items.len == 1);
         assert(self._scope_stack.items[0] == 0);
+    }
+
+    /// Declare a symbol in the current scope.
+    fn declareSymbol(self: *Builder, declaration_node: Ast.Node.Index, name: string, visibility: Symbol.Visibility, flags: Symbol.Flags) !Symbol.Id {
+        const symbol = try self._semantic.symbols.addSymbol(self._gpa, declaration_node, name, self.currentScope(), visibility, flags);
+        return symbol.id;
+    }
+
+    // =========================================================================
+    // ============================ RANDOM GETTERS =============================
+    // =========================================================================
+
+    inline fn AST(self: *const Builder) *const Ast {
+        return &self._semantic.ast;
+    }
+
+    /// Get a node by its ID.
+    ///
+    /// ## Panics
+    /// - If attempting to access the root node (which acts as null).
+    /// - If `node_id` is out of bounds.
+    inline fn getNode(self: *const Builder, node_id: NodeIndex) Node {
+        // root node (whose id is 0) is used as null
+        // NOTE: do not use assert here b/c that gets stripped in release
+        // builds. We want more safety here.
+        if (node_id == 0) @panic("attempted to access null node");
+        assert(node_id < self.AST().nodes.len);
+
+        return self.AST().nodes.get(node_id);
+    }
+
+    /// Get a node by its ID, returning `null` if its the root node (which acts as null).
+    ///
+    /// ## Panics
+    /// - If `node_id` is out of bounds.
+    inline fn maybeGetNode(self: *const Builder, node_id: NodeIndex) ?Node {
+        if (node_id == 0) return null;
+        assert(node_id < self.AST().nodes.len);
+
+        return self.AST().nodes.get(node_id);
+    }
+
+    inline fn getToken(self: *const Builder, token_id: TokenIndex) RawToken {
+        assert(token_id < self.AST().tokens.len);
+
+        const t = self.AST().tokens.get(token_id);
+        return .{
+            .tag = t.tag,
+            .start = t.start,
+        };
+    }
+
+    /// Get an identifier name from an `.identifier` token.
+    fn getIdentifier(self: *Builder, token_id: Ast.TokenIndex) string {
+        const ast = self.AST();
+
+        if (builtin.mode == .Debug) {
+            const tag = ast.tokens.items(.tag)[token_id];
+            assert(tag == .identifier);
+        }
+
+        const slice = ast.tokenSlice(token_id);
+        return slice;
     }
 
     // =========================================================================
@@ -192,13 +301,27 @@ pub const Builder = struct {
 };
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
-const Ast = std.zig.Ast;
 const Type = std.builtin.Type;
 const assert = std.debug.assert;
+const print = std.debug.print;
 
 pub const Semantic = @import("./semantic/Semantic.zig");
+const Scope = Semantic.Scope;
+const Symbol = Semantic.Symbol;
+
+const Ast = std.zig.Ast;
+const Node = Ast.Node;
+const NodeIndex = Ast.Node.Index;
+// Struct used in AST tokens SOA is not pub so we hack it in here.
+const RawToken = struct {
+    tag: std.zig.Token.Tag,
+    start: u32,
+};
+const TokenIndex = Ast.TokenIndex;
+
 const Error = @import("./Error.zig");
 const Span = @import("./source.zig").Span;
 
