@@ -8,6 +8,10 @@
 //! (and many other parsers/analysis tools) use this to great perf advantage.
 //! However, it sucks to work with when writing rules. We opt for simplicity to
 //! reduce cognitive load and make contributing rules easier.
+//!
+//! Throughout this file you'll see mentions of a "program". This does not mean
+//! an entire linked binary or library; rather it refers to a single parsed
+//! file.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -60,6 +64,8 @@ pub const Scope = struct {
 
     /// Scope flags provide hints about what kind of node is creating the
     /// scope.
+    ///
+    /// TODO: Should this be an enum?
     pub const Flags = packed struct {
         /// Top-level "module" scope
         top: bool,
@@ -68,12 +74,16 @@ pub const Scope = struct {
     };
 };
 
+/// Stores variable scopes created by a zig program.
 pub const ScopeTree = struct {
     /// Indexed by scope id.
-    scopes: std.ArrayListUnmanaged(Scope),
+    scopes: ScopeList,
     /// Mappings from scopes to their descendants.
-    children: std.ArrayListUnmanaged(std.ArrayListUnmanaged(Scope.Id)),
+    children: std.ArrayListUnmanaged(ScopeIdList),
     alloc: Allocator,
+
+    const ScopeList = std.ArrayListUnmanaged(Scope);
+    const ScopeIdList = std.ArrayListUnmanaged(Scope.Id);
 
     pub fn init(alloc: Allocator) ScopeTree {
         return ScopeTree{
@@ -83,16 +93,32 @@ pub const ScopeTree = struct {
         };
     }
 
-    pub fn addScope(self: *ScopeTree, parent: ?Scope.Id, flags: Scope.Flags) Scope.Id {
-        const id = self.scopes.items.len;
-        assert(id < std.math.maxInt(u32));
+    /// Create a new scope and insert it into the scope tree.
+    ///
+    /// ## Errors
+    /// If allocation fails. Usually due to OOM.
+    pub fn addScope(self: *ScopeTree, parent: ?Scope.Id, flags: Scope.Flags) !Scope {
+        assert(self.scopes.items.len < std.math.maxInt(Scope.Id));
+        const id: Scope.Id = @intCast(self.scopes.items.len);
 
-        self.scopes.items.append(Scope{ .id = id, .parent = parent, .flags = flags });
-        if (parent != null) {
-            const parentChildren = self.children.items[parent];
-            parentChildren.append(id);
+        // initialize the new scope
+        const scope = try self.scopes.addOne(self.alloc);
+        scope.* = Scope{ .id = id, .parent = parent, .flags = flags };
+
+        // set up it's child list
+        {
+            const childList = try self.children.addOne(null, self.alloc);
+            childList.* = .{};
         }
-        self.children.items.append(std.ArrayListUnmanaged(Scope.Id).init(self.scopes.items.len));
-        return id;
+
+        // Add it to its parent's list of child scopes
+        if (parent != null) {
+            assert(parent < self.children.items.len);
+            const parentChildren: ScopeIdList = self.children.items[parent];
+            const childEl = try parentChildren.addOne(id, self.alloc);
+            childEl.* = id;
+        }
+
+        return scope;
     }
 };
