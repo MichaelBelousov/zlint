@@ -10,13 +10,14 @@
 //! reduce cognitive load and make contributing rules easier.
 //!
 //! Throughout this file you'll see mentions of a "program". This does not mean
+//! MIKE: this is called a compilation unit in zig I believe (like in C/C++)
 //! an entire linked binary or library; rather it refers to a single parsed
 //! file.
 
 pub const Builder = struct {
-    _gpa: Allocator,
+    _gpa: Allocator, // MIKE: I recommend calling this `a` or `alloc`, gpa means "std.heap.GeneralPurposeAllocator" which someone may not want to use
     _arena: ArenaAllocator,
-    _curr_scope_id: Semantic.Scope.Id = 0,
+    _curr_scope_id: Semantic.Scope.Id = 0, // MIKE: can you use a const so we know what 0 means? is it the compilation unit/module scope?
     _curr_symbol_id: ?Semantic.Symbol.Id = null,
     _scope_stack: std.ArrayListUnmanaged(Semantic.Scope.Id),
     /// SAFETY: initialized after parsing. Same safety rationale as _root_scope.
@@ -34,6 +35,7 @@ pub const Builder = struct {
         builder._semantic = Semantic{
             .ast = ast,
             ._arena = builder._arena,
+            // MIKE: does it need the non arena allocator? It's not handling errors
             ._gpa = gpa,
         };
         errdefer builder._semantic.deinit();
@@ -42,20 +44,23 @@ pub const Builder = struct {
         try builder.enterRootScope();
         builder.assertRootScope(); // sanity check
 
+        // MIKE: nitpick: I would recommend std.posix.getenv("DEBUG") != null instead of always printing this in debug mode
+        // MIKE: even better, you can use std.log.debug and then configure the std log options to look for that env var
         // Zig guarantees that the root node ID is 0. We should be careful- they may decide to change this contract.
         if (builtin.mode == .Debug) {
             print("number of nodes: {d}\n", .{builder._semantic.ast.nodes.len});
             var i: usize = 0;
-            while (i < builder._semantic.ast.tokens.len) {
+            // MIKE: zig has a while loop continue expression, which honors continue statements
+            while (i < builder._semantic.ast.tokens.len) : (i += 1) {
                 const tok = builder._semantic.ast.tokens.get(i);
                 print("token ({d}): {any}\n", .{ i, tok });
-                i += 1;
             }
             print("\n", .{});
         }
 
         for (builder._semantic.ast.rootDecls()) |node| {
-            builder.visitNode(node) catch |e| return e;
+            // MIKE: try === catch |e| return e;
+            try builder.visitNode(node);
             builder.assertRootScope();
         }
 
@@ -82,13 +87,15 @@ pub const Builder = struct {
         const ast = try Ast.parse(self._arena.allocator(), source, .zig);
 
         // Record parse errors
-        if (ast.errors.len != 0) {
-            try self._errors.ensureUnusedCapacity(ast.errors.len);
-            for (ast.errors) |ast_err| {
-                // Not an error. TODO: verify this assumption
-                if (ast_err.is_note) continue;
-                self.addAstError(&ast, ast_err) catch @panic("Out of memory");
-            }
+        try self._errors.ensureUnusedCapacity(ast.errors.len);
+        for (ast.errors) |ast_err| {
+            // Not an error. TODO: verify this assumption
+            if (ast_err.is_note) continue;
+            // MIKE: when using inferred error return types, I recommend explicitly switching on the error, so that
+            // if the error set is ever changed in the future, the compiler will yell at you for a non-exhaustive switch
+            self.addAstError(&ast, ast_err) catch |e| switch (e) {
+                error.OutOfMemory => @panic("Out of memory"),
+            };
         }
 
         return ast;
@@ -148,6 +155,7 @@ pub const Builder = struct {
         const visibility = if (var_decl.visib_token == null) Symbol.Visibility.private else Symbol.Visibility.public;
         _ = try self.declareSymbol(node_id, identifier, visibility, flags);
 
+        // MIKE: use std.log.debug
         if (builtin.mode == .Debug) {
             const main = self.getToken(node.main_token);
             const lhs = self.maybeGetNode(node.data.lhs);
@@ -211,6 +219,7 @@ pub const Builder = struct {
     // ============================ RANDOM GETTERS =============================
     // =========================================================================
 
+    // MIKE: why uppercase?
     inline fn AST(self: *const Builder) *const Ast {
         return &self._semantic.ast;
     }
@@ -221,13 +230,7 @@ pub const Builder = struct {
     /// - If attempting to access the root node (which acts as null).
     /// - If `node_id` is out of bounds.
     inline fn getNode(self: *const Builder, node_id: NodeIndex) Node {
-        // root node (whose id is 0) is used as null
-        // NOTE: do not use assert here b/c that gets stripped in release
-        // builds. We want more safety here.
-        if (node_id == 0) @panic("attempted to access null node");
-        assert(node_id < self.AST().nodes.len);
-
-        return self.AST().nodes.get(node_id);
+        return self.maybeGetNode(node_id) orelse @panic("attempted to access null node");
     }
 
     /// Get a node by its ID, returning `null` if its the root node (which acts as null).
@@ -270,6 +273,7 @@ pub const Builder = struct {
 
     fn addAstError(self: *Builder, ast: *const Ast, ast_err: Ast.Error) !void {
         const alloc = self._errors.allocator;
+        // MIKE: I feel like you could use a fixed stack buffer writer here instead...
         var msg: std.ArrayListUnmanaged(u8) = .{};
         defer msg.deinit(alloc);
         try ast.renderError(ast_err, msg.writer(alloc));
@@ -295,6 +299,7 @@ pub const Builder = struct {
         try self._errors.append(err);
     }
 
+    // MIKE: maybe call it addErrorMove?
     /// Create and record an error. `message` is an owned slice moved into the new Error.
     // fn addErrorOwnedMessage(self: *Builder, message: string, labels: []Span, help: ?string) !void {
     fn addErrorOwnedMessage(self: *Builder, message: string, help: ?string) !void {
@@ -317,11 +322,9 @@ pub const Builder = struct {
         /// Free the error list, leaving `semantic` untouched.
         pub fn deinitErrors(self: *Result) void {
             const err_alloc = self.errors.allocator;
-            var i: usize = 0;
-            const len = self.errors.items.len;
-            while (i < len) {
-                self.errors.items[i].deinit(err_alloc);
-                i += 1;
+            // MIKE: use a mutable capture and prefer for loops over slices
+            for (self.errors.items) |*err| {
+                err.deinit(err_alloc);
             }
             self.errors.deinit();
         }
