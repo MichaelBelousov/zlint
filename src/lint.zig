@@ -101,7 +101,7 @@ pub const Linter = struct {
         }
         print("Symbols:\n", .{});
         for (semantic_result.semantic.symbols.symbols.items) |symbol| {
-            print("\n\t{s} {any}", .{symbol.name, symbol});
+            print("\t{s}\t{any}\n", .{symbol.name, symbol});
         }
         semantic_result.deinitErrors();
         const semantic = semantic_result.semantic;

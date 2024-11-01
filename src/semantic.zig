@@ -109,6 +109,11 @@ pub const Builder = struct {
                 const decl = self.AST().fullVarDecl(node_id) orelse unreachable;
                 self.visitGlobalVarDecl(node_id, decl);
             },
+            .container_decl, .container_decl_trailing, .container_decl_two, .container_decl_two_trailing => {
+                try self.enterScope(.{ .s_block = true });
+                defer self.exitScope();
+                return self.visitRecursive(self.getNode(node_id));
+            },
             .local_var_decl, .simple_var_decl, .aligned_var_decl => {
                 const decl = self.AST().fullVarDecl(node_id) orelse unreachable;
                 return self.visitVarDecl(node_id, decl);
@@ -132,6 +137,9 @@ pub const Builder = struct {
         @panic("todo: visitGlobalVarDecl");
     }
 
+    /// Visit a variable declaration. Global declarations are visited
+    /// separately, because their lhs/rhs nodes and main token mean different
+    /// things.
     fn visitVarDecl(self: *Builder, node_id: NodeIndex, var_decl: Ast.full.VarDecl) !void {
         const node = self.getNode(node_id);
         // main_token points to `var`, `const` keyword. `.identifier` comes immediately afterwards
@@ -144,8 +152,6 @@ pub const Builder = struct {
             const main = self.getToken(node.main_token);
             const lhs = self.maybeGetNode(node.data.lhs);
             const rhs = self.maybeGetNode(node.data.rhs);
-            // const lhs = if (node.data.lhs == 0) null else self.getNode(node.data.lhs);
-            // const rhs = if (node.data.rhs == 0) null else self.getNode(node.data.rhs);
 
             std.debug.print("node ({d}): {any}\n", .{ node_id, node });
             std.debug.print("main: {any}\n", .{main});
@@ -172,15 +178,17 @@ pub const Builder = struct {
         self._scope_stack.appendAssumeCapacity(root_scope.id);
     }
 
-    fn enterScope(self: *Builder, flags: Semantic.Scope.Flags) void {
+    fn enterScope(self: *Builder, flags: Semantic.Scope.Flags) !void {
+        print("entering scope\n", .{});
         const parent_id = self._scope_stack.getLast(); // panics if stack is empty
         const scope = try self._semantic.scopes.addScope(self._gpa, parent_id, flags);
-        self._scope_stack.append(self._gpa, scope.id);
+        try self._scope_stack.append(self._gpa, scope.id);
     }
 
     inline fn exitScope(self: *Builder) void {
-        assert(self._scope_stack.items.len > 2); // cannot pop root scope
-        self._scope_stack.pop();
+        print("exiting scope\n", .{});
+        assert(self._scope_stack.items.len > 1); // cannot pop root scope
+        _ = self._scope_stack.pop();
     }
 
     inline fn currentScope(self: *const Builder) Semantic.Scope.Id {
