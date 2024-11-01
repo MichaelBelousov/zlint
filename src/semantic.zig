@@ -43,12 +43,15 @@ pub const Builder = struct {
         builder.assertRootScope(); // sanity check
 
         // Zig guarantees that the root node ID is 0. We should be careful- they may decide to change this contract.
-        print("number of nodes: {d}\n", .{builder._semantic.ast.nodes.len});
-        var i: usize = 0;
-        while (i < builder._semantic.ast.tokens.len) {
-            const tok = builder._semantic.ast.tokens.get(i);
-            print("token ({d}): {any}\n", .{ i, tok });
-            i += 1;
+        if (builtin.mode == .Debug) {
+            print("number of nodes: {d}\n", .{builder._semantic.ast.nodes.len});
+            var i: usize = 0;
+            while (i < builder._semantic.ast.tokens.len) {
+                const tok = builder._semantic.ast.tokens.get(i);
+                print("token ({d}): {any}\n", .{ i, tok });
+                i += 1;
+            }
+            print("\n", .{});
         }
 
         for (builder._semantic.ast.rootDecls()) |node| {
@@ -95,7 +98,10 @@ pub const Builder = struct {
     // ================================= VISIT =================================
     // =========================================================================
 
-    fn visitNode(self: *Builder, node_id: NodeIndex) !void {
+    const NULL_NODE: NodeIndex = 0;
+
+    fn visitNode(self: *Builder, node_id: NodeIndex) anyerror!void {
+        if (node_id == NULL_NODE) return; // when lhs/rhs are 0 (root node), it means `null`
         const tag: Ast.Node.Tag = self._semantic.ast.nodes.items(.tag)[node_id];
         switch (tag) {
             .root => unreachable, // root node is never referenced.
@@ -108,8 +114,15 @@ pub const Builder = struct {
                 return self.visitVarDecl(node_id, decl);
             },
             // .@"usingnamespace" => self.visitUsingNamespace(node),
-            else => std.debug.panic("unimplemented node tag: {any}", .{tag}),
+            // else => std.debug.panic("unimplemented node tag: {any}", .{tag}),
+            else => return self.visitRecursive(self.getNode(node_id)),
         }
+    }
+
+    /// Basic lhs/rhs traversal. This is just a shorthand.
+    inline fn visitRecursive(self: *Builder, node: Node) !void {
+        try self.visitNode(node.data.lhs);
+        try self.visitNode(node.data.rhs);
     }
 
     fn visitGlobalVarDecl(self: *Builder, node_id: NodeIndex, var_decl: Ast.full.VarDecl) void {
@@ -124,17 +137,24 @@ pub const Builder = struct {
         // main_token points to `var`, `const` keyword. `.identifier` comes immediately afterwards
         const identifier: string = self.getIdentifier(node.main_token + 1);
         const flags = Symbol.Flags{ .s_comptime = var_decl.comptime_token != null };
-        _ = try self.declareSymbol(node_id, identifier, Semantic.Symbol.Visibility.public, flags);
+        const visibility = if (var_decl.visib_token == null) Symbol.Visibility.private else Symbol.Visibility.public;
+        _ = try self.declareSymbol(node_id, identifier, visibility, flags);
 
-        const main = self.getToken(node.main_token);
-        const lhs = if (node.data.lhs == 0) null else self.getNode(node.data.lhs);
-        const rhs = if (node.data.rhs == 0) null else self.getNode(node.data.rhs);
+        if (builtin.mode == .Debug) {
+            const main = self.getToken(node.main_token);
+            const lhs = self.maybeGetNode(node.data.lhs);
+            const rhs = self.maybeGetNode(node.data.rhs);
+            // const lhs = if (node.data.lhs == 0) null else self.getNode(node.data.lhs);
+            // const rhs = if (node.data.rhs == 0) null else self.getNode(node.data.rhs);
 
-        std.debug.print("node ({d}): {any}\n", .{ node_id, node });
-        std.debug.print("main: {any}\n", .{main});
-        std.debug.print("lhs: {any}\n", .{lhs});
-        std.debug.print("rhs: {any}\n", .{rhs});
-        std.debug.print("{any}\n\n", .{var_decl});
+            std.debug.print("node ({d}): {any}\n", .{ node_id, node });
+            std.debug.print("main: {any}\n", .{main});
+            std.debug.print("lhs: {any}\n", .{lhs});
+            std.debug.print("rhs: {any}\n", .{rhs});
+            std.debug.print("{any}\n\n", .{var_decl});
+        }
+
+        return self.visitRecursive(node);
     }
 
     // =========================================================================

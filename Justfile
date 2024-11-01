@@ -3,13 +3,14 @@
 set windows-shell := ["powershell"]
 set shell := ["bash", "-cu"]
 
-alias b := build
-alias c := check
+alias b  := build
+alias c  := check
 alias ck := check
-alias f := fmt
-alias l := lint
-alias t := test
-alias w := watch
+alias f  := fmt
+alias l  := lint
+alias r  := run
+alias t  := test
+alias w  := watch
 
 _default:
   @just --list -u

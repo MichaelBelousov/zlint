@@ -108,7 +108,7 @@ pub const SymbolTable = struct {
             .scope = scope_id,
             .visibility = visibility,
             .flags = flags,
-            .decl = declaration_node
+            .decl = declaration_node,
         };
 
         try self.members.append(alloc, .{});
